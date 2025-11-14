@@ -1,0 +1,72 @@
+# specific files
+pcm_to_jira_integrated_report_*
+*last_run.txt
+*.lnk
+deploy EXE.bat
+deploy PY sources.bat
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv
+
+# PyInstaller - Build outputs (ignore these)
+build/
+dist/
+*.manifest
+*.spec.bak
+
+# BUT: Keep .spec files (they are configuration, not output)
+# .spec files should be committed!
+
+# Executables in root/dist/build (ignore these)
+/*.exe
+dist/*.exe
+build/*.exe
+*.dll (unless needed as dependencies)
+
+# EXCEPTION: Allow versioned releases in releases folder
+!releases/
+!releases/**/*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Local configuration
+.env
+config.local.ini
+
+# Excel temporary files
+~$*.xlsx
+~$*.xls
+~$*.xlsm
+
+# Test outputs
+output/
+temp/
+*.tmp
+
+# Backup files
+*.bak
+*.backup
