@@ -18,6 +18,7 @@ venv/
 env/
 ENV/
 .venv
+.github/
 
 # PyInstaller - Build outputs (ignore these)
 build/
