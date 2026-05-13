@@ -19,8 +19,7 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    [],
     [],
     name='D‏irectory content',
     debug=False,
@@ -28,6 +27,7 @@ exe = EXE(
     strip=False,
     upx=True,
     upx_exclude=[],
+    exclude_binaries=True,
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
@@ -35,4 +35,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='D‏irectory content',
 )

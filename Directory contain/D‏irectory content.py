@@ -1,10 +1,38 @@
+changelog = [
+    "1.00   13/05/26    Initial version",
+    "1.01   13/05/26    Added derived path columns and open generated CSV at the end"
+]
+
 import os
-import pandas as pd
-from pathlib import Path
+import hashlib
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import quote
+
+import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import hashlib
+
+
+def get_path_right_of_nth_backslash(path_value, backslash_count):
+    """
+    Return the portion of a Windows path located after the nth backslash.
+    """
+    normalized_path = str(path_value).replace('/', '\\')
+    parts = normalized_path.split('\\')
+
+    if len(parts) <= backslash_count:
+        return ""
+
+    return '\\'.join(parts[backslash_count:])
+
+
+def to_html_path(path_value):
+    """
+    Convert a Windows path fragment into a URL-encoded path.
+    """
+    normalized_path = str(path_value).replace('\\', '/')
+    return quote(normalized_path, safe='/')
 
 def calculate_file_hash(file_path, hash_type='md5'):
     """
@@ -52,7 +80,10 @@ def get_directory_contents_advanced(directory_path, include_subdirs=True,
                 stat = item.stat()
                 file_info = {
                     'filename': item.name,
+                    'filename_without_extension': item.stem,
                     'full_path': str(item),
+                    'path_without_current_user': get_path_right_of_nth_backslash(item, 3),
+                    'path_right_of_5th_backslash_html': to_html_path(get_path_right_of_nth_backslash(item, 5)),
                     'relative_path': str(item.relative_to(path)),
                     'directory': str(item.parent),
                     'extension': item.suffix,
@@ -184,10 +215,10 @@ def main():
             f"CSV saved to:\n{output_path}"
         )
         
-        # Optionally open the output folder
-        response = messagebox.askyesno("Open Folder", "Would you like to open the output folder?")
+        # Optionally open the generated CSV file
+        response = messagebox.askyesno("Open File", "Would you like to open the generated CSV file?")
         if response:
-            os.startfile(str(output_dir))
+            os.startfile(str(output_path))
             
     except FileNotFoundError:
         error_msg = f"Directory not found: {selected_directory}"
