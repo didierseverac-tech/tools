@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['D\u200firectory content.py'],
+    ['Directory content.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -21,7 +21,7 @@ exe = EXE(
     a.scripts,
     [],
     [],
-    name='D‏irectory content',
+    name='Directory content',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -44,5 +44,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='D‏irectory content',
+    name='Directory content',
 )
