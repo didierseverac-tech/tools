@@ -78,10 +78,12 @@ if /i "!key!"=="deploy_name" set "DEPLOY_NAME=!val!"
 if /i "!key!"=="deploy_folder_name" set "DEPLOY_FOLDER_NAME=!val!"
 if /i "!key!"=="contact_email" set "CONTACT_EMAIL=!val!"
 if /i "!key!"=="spec_file" set "SPEC_FILE=!val!"
+if /i "!key!"=="spec_file_onefile" set "SPEC_FILE_ONEFILE=!val!"
 if /i "!key!"=="venv_path" set "VENV_PATH=!val!"
 if /i "!key!"=="venv_root" set "VENV_ROOT=!val!"
 if /i "!key!"=="venv_name" set "VENV_NAME=!val!"
 if /i "!key!"=="project_dir" if not "!val!"=="" set "PROJECT_DIR=!val!"
+if /i "!key!"=="build_root" set "BUILD_ROOT=!val!"
 
 goto :eof
 
@@ -100,8 +102,19 @@ if /i not "!BUILD_MODE!"=="onefile" if /i not "!BUILD_MODE!"=="onedir" (
     exit /b 1
 )
 
+if /i "!BUILD_MODE!"=="onefile" (
+    if defined SPEC_FILE_ONEFILE (
+        set "SPEC_FILE=!SPEC_FILE_ONEFILE!"
+    )
+)
+
 for %%F in ("!DEPLOY_NAME!") do set "BASE_NAME=%%~nF"
 if not defined DEPLOY_FOLDER_NAME set "DEPLOY_FOLDER_NAME=!BASE_NAME!"
+if not defined BUILD_ROOT set "BUILD_ROOT=C:\temp\PyInstallerBuilds"
+
+set "BUILD_SANITIZED_NAME=!BASE_NAME: =_!"
+set "BUILD_WORK_PATH=!BUILD_ROOT!\!BUILD_SANITIZED_NAME!\build"
+set "BUILD_DIST_PATH=!BUILD_ROOT!\!BUILD_SANITIZED_NAME!\dist"
 
 if /i "!BUILD_MODE!"=="onedir" (
     set "DEPLOY_TARGET_NAME=!DEPLOY_FOLDER_NAME!"
@@ -114,6 +127,7 @@ echo Configuration loaded:
 echo   Virtual Env Root: !VENV_ROOT!
 echo   Virtual Env Name: !VENV_NAME!
 echo   Build Mode: !BUILD_MODE!
+echo   Build Root: !BUILD_ROOT!
 echo   Project Dir: !PROJECT_DIR!
 echo   Spec File: !SPEC_FILE!
 echo   Deploy Name: !DEPLOY_NAME!
@@ -255,8 +269,9 @@ REM Clean Previous Build
 REM =============================
 echo.
 echo Cleaning previous build artifacts...
-if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
+if not exist "!BUILD_ROOT!" mkdir "!BUILD_ROOT!"
+if exist "!BUILD_WORK_PATH!" rmdir /s /q "!BUILD_WORK_PATH!"
+if exist "!BUILD_DIST_PATH!" rmdir /s /q "!BUILD_DIST_PATH!"
 
 REM =============================
 REM Build with PyInstaller
@@ -265,7 +280,7 @@ echo.
 echo ========================================
 echo Building executable from !SPEC_FILE!
 echo ========================================
-pyinstaller "!SPEC_FILE!" --clean
+pyinstaller "!SPEC_FILE!" --clean --workpath "!BUILD_WORK_PATH!" --distpath "!BUILD_DIST_PATH!"
 if errorlevel 1 (
     echo.
     echo ERROR: PyInstaller build failed!
@@ -276,6 +291,18 @@ if errorlevel 1 (
 echo.
 echo Build complete!
 
+if /i "!BUILD_MODE!"=="onedir" (
+    echo Verifying launcher executable in onedir output...
+    for /d %%d in ("!BUILD_DIST_PATH!\*") do (
+        if not exist "%%~fd\*.exe" (
+            if exist "!BUILD_WORK_PATH!\%%~nxd\*.exe" (
+                echo Restoring launcher into: %%~fd
+                for %%f in ("!BUILD_WORK_PATH!\%%~nxd\*.exe") do copy "%%~ff" "%%~fd\" /Y >nul
+            )
+        )
+    )
+)
+
 REM =============================
 REM Find Built Artifact
 REM =============================
@@ -284,7 +311,7 @@ if /i "!BUILD_MODE!"=="onedir" (
     echo Locating built application folder...
     set "ARTIFACT_DIR="
     set "ARTIFACT_EXE="
-    for /d %%d in ("dist\*") do (
+    for /d %%d in ("!BUILD_DIST_PATH!\*") do (
         if exist "%%~fd\*.exe" (
             for %%f in ("%%~fd\*.exe") do (
                 set "ARTIFACT_DIR=%%~fd"
@@ -296,7 +323,7 @@ if /i "!BUILD_MODE!"=="onedir" (
 ) else (
     echo Locating built executable...
     set "ARTIFACT_EXE="
-    for %%f in ("dist\*.exe") do (
+    for %%f in ("!BUILD_DIST_PATH!\*.exe") do (
         set "ARTIFACT_EXE=%%~ff"
         goto :ArtifactFound
     )

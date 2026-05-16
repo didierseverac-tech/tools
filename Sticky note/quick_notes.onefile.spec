@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['Directory content.py'],
+    ['quick_notes.py'],
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['PIL._tkinter_finder', 'pystray._win32'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -19,28 +19,21 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    name='Directory content',
+    name='Quick Notes',
+    icon='quick_notes.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
-    exclude_binaries=True,
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='Directory content',
 )
