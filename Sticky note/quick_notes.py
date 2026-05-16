@@ -12,7 +12,8 @@ changelog = [
     "1.10   16/05/26    Force the custom window to appear as an app window in the Windows taskbar",
     "1.11   16/05/26    Replaced custom borderless chrome with a native window for reliable taskbar presence",
     "1.12   16/05/26    Moved config storage to a neutral per-user app-data folder with legacy fallback",
-    "1.13   16/05/26    Explicitly enabled native window resizing with a minimum size"
+    "1.13   16/05/26    Explicitly enabled native window resizing with a minimum size",
+    "1.14   16/05/26    Replaced the notebook with custom color-coded tabs stored per topic in the config file"
 ]
 
 import configparser as _configparser
@@ -25,9 +26,9 @@ import threading as _threading
 from pathlib import Path as _Path
 
 import tkinter as _tk
+from tkinter import colorchooser as _colorchooser
 from tkinter import messagebox as _messagebox
 from tkinter import simpledialog as _simpledialog
-from tkinter import ttk as _ttk
 
 from PIL import Image as _Image
 from PIL import ImageDraw as _ImageDraw
@@ -82,6 +83,8 @@ DEFAULT_CONFIG = {
     "active_topic": "General",
 }
 
+DEFAULT_TOPIC_COLOR = "#d7c9b0"
+
 
 def _clamp(_value, _minimum, _maximum):
     """Clamp a numeric value to the given range."""
@@ -93,6 +96,40 @@ def _sanitize_topic_name(_topic_name):
     _sanitized = _re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", _topic_name).strip()
     _sanitized = _sanitized.rstrip(". ")
     return _sanitized or "General"
+
+
+def _normalize_color(_color_value, _fallback=DEFAULT_TOPIC_COLOR):
+    """Return a valid #RRGGBB color string or the fallback."""
+    if not isinstance(_color_value, str):
+        return _fallback
+    _value = _color_value.strip()
+    if _re.fullmatch(r"#[0-9a-fA-F]{6}", _value):
+        return _value.lower()
+    return _fallback
+
+
+def _blend_color(_base_color, _mix_color, _ratio):
+    """Blend two colors and return a #RRGGBB string."""
+    _base = _normalize_color(_base_color)
+    _mix = _normalize_color(_mix_color, _base)
+    _ratio = _clamp(float(_ratio), 0.0, 1.0)
+    _channels = []
+    for _index in (1, 3, 5):
+        _base_channel = int(_base[_index:_index + 2], 16)
+        _mix_channel = int(_mix[_index:_index + 2], 16)
+        _value = round((_base_channel * (1.0 - _ratio)) + (_mix_channel * _ratio))
+        _channels.append(f"{_value:02x}")
+    return f"#{''.join(_channels)}"
+
+
+def _text_color_for_background(_background_color):
+    """Choose a readable text color for a solid background."""
+    _color = _normalize_color(_background_color)
+    _red = int(_color[1:3], 16)
+    _green = int(_color[3:5], 16)
+    _blue = int(_color[5:7], 16)
+    _luminance = (0.299 * _red) + (0.587 * _green) + (0.114 * _blue)
+    return "#1f1f1f" if _luminance >= 160 else "#fffaf0"
 
 
 def _get_app_directory():
@@ -233,9 +270,15 @@ class QuickNotesApp:
         self._is_visible = False
         self._is_quitting = False
         self._resize_origin = None
+        self._context_topic_name = None
         self._tab_widgets = {}
+        self._tab_labels = {}
         self._topic_files = {}
         self._active_topic = self._config["active_topic"]
+        self._topic_colors = {
+            _topic_name: _normalize_color(_color_value)
+            for _topic_name, _color_value in self._config.get("topic_colors", {}).items()
+        }
 
         self._sync_topics_with_folder()
 
@@ -268,6 +311,7 @@ class QuickNotesApp:
 
     def _load_config(self):
         _parser = _configparser.ConfigParser()
+        _parser.optionxform = str
         _parser["QuickNotes"] = DEFAULT_CONFIG.copy()
         if self._config_path.exists():
             _parser.read(self._config_path, encoding="utf-8")
@@ -302,7 +346,11 @@ class QuickNotesApp:
                 _topic.strip() for _topic in _section.get("topics", DEFAULT_CONFIG["topics"]).split("|") if _topic.strip()
             ] or ["General"],
             "active_topic": _section.get("active_topic", DEFAULT_CONFIG["active_topic"]),
+            "topic_colors": {},
         }
+        if _parser.has_section("Topics"):
+            for _topic_name, _color_value in _parser.items("Topics"):
+                _config["topic_colors"][_topic_name] = _normalize_color(_color_value)
         if _config["active_topic"] not in _config["topics"]:
             _config["active_topic"] = _config["topics"][0]
         return _config
@@ -310,6 +358,7 @@ class QuickNotesApp:
     def _write_config(self, _parser=None):
         if _parser is None:
             _parser = _configparser.ConfigParser()
+            _parser.optionxform = str
             _parser["QuickNotes"] = {
                 "hotkey": self._config["hotkey"],
                 "notes_folder": str(self._topics_dir),
@@ -323,6 +372,10 @@ class QuickNotesApp:
                 "start_minimized": str(self._config["start_minimized"]).lower(),
                 "topics": "|".join(self._config["topics"]),
                 "active_topic": self._active_topic,
+            }
+            _parser["Topics"] = {
+                _topic_name: self._topic_colors.get(_topic_name, DEFAULT_TOPIC_COLOR)
+                for _topic_name in self._config["topics"]
             }
 
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -350,6 +403,15 @@ class QuickNotesApp:
 
         _config_changed = _updated_topics != self._config["topics"]
         self._config["topics"] = _updated_topics
+
+        for _topic_name in self._config["topics"]:
+            if _topic_name not in self._topic_colors:
+                self._topic_colors[_topic_name] = DEFAULT_TOPIC_COLOR
+
+        _removed_topics = set(self._topic_colors) - set(self._config["topics"])
+        for _topic_name in _removed_topics:
+            self._topic_colors.pop(_topic_name, None)
+            _config_changed = True
 
         if self._active_topic not in self._config["topics"]:
             self._active_topic = self._config["topics"][0]
@@ -407,14 +469,17 @@ class QuickNotesApp:
         self._container = _tk.Frame(self._root, bg="#efe7d8", bd=1, relief="solid")
         self._container.pack(fill="both", expand=True)
 
-        self._notebook = _ttk.Notebook(self._container)
-        self._notebook.pack(fill="both", expand=True, padx=6, pady=6)
-        self._notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+        self._tab_bar = _tk.Frame(self._container, bg="#dbcdb6")
+        self._tab_bar.pack(fill="x", padx=6, pady=(6, 0))
+
+        self._content_frame = _tk.Frame(self._container, bg="#efe7d8")
+        self._content_frame.pack(fill="both", expand=True, padx=6, pady=6)
 
         self._context_menu = _tk.Menu(self._root, tearoff=0)
         self._context_menu.add_command(label="Add topic", command=self._add_topic)
         self._context_menu.add_command(label="Rename topic", command=self._rename_topic)
         self._context_menu.add_command(label="Delete topic", command=self._delete_topic)
+        self._context_menu.add_command(label="Change tab color", command=self._change_tab_color)
         self._context_menu.add_separator()
         self._context_menu.add_command(label="Clear all", command=self._clear_all)
         self._context_menu.add_command(label="Copy all", command=self._copy_all)
@@ -438,7 +503,7 @@ class QuickNotesApp:
             self._create_topic_tab(_topic_name)
 
         if self._active_topic in self._tab_widgets:
-            self._notebook.select(self._tab_widgets[self._active_topic]["frame"])
+            self._show_topic(self._active_topic, _persist=False)
         self._focus_active_text()
 
     def _ensure_topic_files(self):
@@ -461,7 +526,7 @@ class QuickNotesApp:
         return self._topics_dir / f"{_sanitize_topic_name(_topic_name)}.txt"
 
     def _create_topic_tab(self, _topic_name, _content=None):
-        _frame = _tk.Frame(self._notebook, bg="#efe7d8")
+        _frame = _tk.Frame(self._content_frame, bg="#efe7d8")
         _scrollbar = _tk.Scrollbar(_frame)
         _scrollbar.pack(side="right", fill="y")
 
@@ -491,11 +556,66 @@ class QuickNotesApp:
 
         _text_widget.insert("1.0", _content)
         _text_widget.edit_modified(False)
-        self._notebook.add(_frame, text=_topic_name)
+        _tab_label = _tk.Label(
+            self._tab_bar,
+            text=_topic_name,
+            padx=12,
+            pady=6,
+            bd=0,
+            cursor="hand2",
+            anchor="center",
+        )
+        _tab_label.pack(side="left", padx=(0, 4), pady=(4, 0))
+        _tab_label.bind("<Button-1>", lambda _event, _name=_topic_name: self._show_topic(_name))
+        _tab_label.bind("<Button-3>", lambda _event, _name=_topic_name: self._show_tab_context_menu(_event, _name))
         self._tab_widgets[_topic_name] = {
             "frame": _frame,
             "text": _text_widget,
         }
+        self._tab_labels[_topic_name] = _tab_label
+        self._apply_tab_style(_topic_name)
+
+    def _topic_color(self, _topic_name):
+        return self._topic_colors.get(_topic_name, DEFAULT_TOPIC_COLOR)
+
+    def _apply_tab_style(self, _topic_name):
+        _tab_label = self._tab_labels.get(_topic_name)
+        if not _tab_label:
+            return
+        _background = self._topic_color(_topic_name)
+        _is_active = _topic_name == self._active_topic
+        _text_color = _text_color_for_background(_background)
+        _muted_text = _blend_color(_text_color, _background, 0.35)
+        _tab_label.configure(
+            bg=_background,
+            fg=_text_color if _is_active else _muted_text,
+            font=("Segoe UI", 10, "bold" if _is_active else "normal"),
+            pady=8 if _is_active else 5,
+            relief="solid",
+            bd=1,
+            highlightthickness=0,
+        )
+        if _is_active:
+            _tab_label.pack_configure(pady=(0, 0))
+        else:
+            _tab_label.pack_configure(pady=(4, 0))
+
+    def _refresh_tab_styles(self):
+        for _topic_name in self._config["topics"]:
+            self._apply_tab_style(_topic_name)
+
+    def _show_topic(self, _topic_name, _persist=True):
+        if _topic_name not in self._tab_widgets:
+            return
+        for _name, _widgets in self._tab_widgets.items():
+            _widgets["frame"].pack_forget()
+            if _name == _topic_name:
+                _widgets["frame"].pack(fill="both", expand=True)
+        self._active_topic = _topic_name
+        self._refresh_tab_styles()
+        if _persist:
+            self._write_config()
+        self._focus_active_text()
 
     def _active_text_widget(self):
         return self._tab_widgets[self._active_topic]["text"]
@@ -558,9 +678,20 @@ class QuickNotesApp:
     def _show_context_menu(self, _event):
         _topic_count = len(self._config["topics"])
         _toggle_label = "Disable log mode" if self._config["log_mode"] else "Enable log mode"
+        self._context_topic_name = None
         self._context_menu.entryconfig(1, state="normal" if _topic_count > 0 else "disabled")
         self._context_menu.entryconfig(2, state="normal" if _topic_count > 1 else "disabled")
-        self._context_menu.entryconfig(6, label=_toggle_label)
+        self._context_menu.entryconfig(3, state="normal" if _topic_count > 0 else "disabled")
+        self._context_menu.entryconfig(7, label=_toggle_label)
+        self._context_menu.tk_popup(_event.x_root, _event.y_root)
+
+    def _show_tab_context_menu(self, _event, _topic_name):
+        self._context_topic_name = _topic_name
+        self._context_menu.entryconfig(1, state="normal")
+        self._context_menu.entryconfig(2, state="normal" if len(self._config["topics"]) > 1 else "disabled")
+        self._context_menu.entryconfig(3, state="normal")
+        _toggle_label = "Disable log mode" if self._config["log_mode"] else "Enable log mode"
+        self._context_menu.entryconfig(7, label=_toggle_label)
         self._context_menu.tk_popup(_event.x_root, _event.y_root)
 
     def _clear_all(self):
@@ -585,11 +716,11 @@ class QuickNotesApp:
             return
 
         self._config["topics"].append(_topic_name)
+        self._topic_colors[_topic_name] = DEFAULT_TOPIC_COLOR
         self._topic_files[_topic_name] = self._topic_file_path(_topic_name)
         self._topic_files[_topic_name].write_text("", encoding="utf-8")
         self._create_topic_tab(_topic_name, _content="")
-        self._active_topic = _topic_name
-        self._notebook.select(self._tab_widgets[_topic_name]["frame"])
+        self._show_topic(_topic_name, _persist=False)
         self._write_config()
         self._focus_active_text()
 
@@ -614,12 +745,20 @@ class QuickNotesApp:
         _old_path.replace(_new_path)
         _widgets = self._tab_widgets.pop(_old_name)
         self._tab_widgets[_new_name] = _widgets
+        _tab_label = self._tab_labels.pop(_old_name)
+        self._tab_labels[_new_name] = _tab_label
         self._topic_files.pop(_old_name)
         self._topic_files[_new_name] = _new_path
+        self._topic_colors[_new_name] = self._topic_colors.pop(_old_name, DEFAULT_TOPIC_COLOR)
         _topic_index = self._config["topics"].index(_old_name)
         self._config["topics"][_topic_index] = _new_name
         self._active_topic = _new_name
-        self._notebook.tab(_widgets["frame"], text=_new_name)
+        _tab_label.configure(text=_new_name)
+        _tab_label.bind("<Button-1>", lambda _event, _name=_new_name: self._show_topic(_name))
+        _tab_label.bind("<Button-3>", lambda _event, _name=_new_name: self._show_tab_context_menu(_event, _name))
+        if self._context_topic_name == _old_name:
+            self._context_topic_name = _new_name
+        self._refresh_tab_styles()
         self._write_config()
 
     def _delete_topic(self):
@@ -631,16 +770,34 @@ class QuickNotesApp:
             return
 
         _widgets = self._tab_widgets.pop(_topic_name)
-        self._notebook.forget(_widgets["frame"])
+        _widgets["frame"].destroy()
+        _tab_label = self._tab_labels.pop(_topic_name)
+        _tab_label.destroy()
         _topic_path = self._topic_files.pop(_topic_name)
+        self._topic_colors.pop(_topic_name, None)
         if _topic_path.exists():
             _topic_path.unlink()
         self._config["topics"].remove(_topic_name)
         self._active_topic = self._config["topics"][0]
-        self._notebook.select(self._tab_widgets[self._active_topic]["frame"])
+        self._show_topic(self._active_topic, _persist=False)
         self._save_notes()
         self._write_config()
         self._focus_active_text()
+
+    def _change_tab_color(self):
+        _topic_name = self._context_topic_name or self._active_topic
+        if _topic_name not in self._config["topics"]:
+            return
+        _selected = _colorchooser.askcolor(
+            color=self._topic_color(_topic_name),
+            title=f"Choose color for {_topic_name}",
+            parent=self._root,
+        )
+        if not _selected or not _selected[1]:
+            return
+        self._topic_colors[_topic_name] = _normalize_color(_selected[1])
+        self._apply_tab_style(_topic_name)
+        self._write_config()
 
     def _toggle_log_mode(self):
         self._config["log_mode"] = not self._config["log_mode"]
@@ -693,15 +850,6 @@ class QuickNotesApp:
         self._config["window_h"] = self._root.winfo_height()
         self._write_config()
         self._geometry_after_id = None
-
-    def _on_tab_changed(self, _event=None):
-        _selected_tab = self._notebook.select()
-        for _topic_name, _widgets in self._tab_widgets.items():
-            if str(_widgets["frame"]) == _selected_tab:
-                self._active_topic = _topic_name
-                self._write_config()
-                self._focus_active_text()
-                break
 
     def _create_tray_icon(self):
         _image = _Image.new("RGBA", (64, 64), (0, 0, 0, 0))
