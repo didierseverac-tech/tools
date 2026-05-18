@@ -13,7 +13,11 @@ changelog = [
     "1.11   16/05/26    Replaced custom borderless chrome with a native window for reliable taskbar presence",
     "1.12   16/05/26    Moved config storage to a neutral per-user app-data folder with legacy fallback",
     "1.13   16/05/26    Explicitly enabled native window resizing with a minimum size",
-    "1.14   16/05/26    Replaced the notebook with custom color-coded tabs stored per topic in the config file"
+    "1.14   16/05/26    Replaced the notebook with custom color-coded tabs stored per topic in the config file",
+    "1.15   18/05/26    Fixed topic rename to target the tab selected in the context menu",
+    "1.16   18/05/26    Added an About dialog to the app and tray menus",
+    "1.17   18/05/26    Fixed right-click topic actions so tab context selection is preserved",
+    "1.18   18/05/26    Open the topic rename dialog when a tab is double-clicked"
 ]
 
 import configparser as _configparser
@@ -36,6 +40,7 @@ import pystray as _pystray
 
 
 APP_NAME = "Quick Notes"
+APP_VERSION = changelog[-1].split()[0]
 APP_MUTEX_NAME = "QuickNotesSingleInstanceMutex"
 APP_USER_MODEL_ID = "SchneiderElectric.QuickNotes"
 GWL_EXSTYLE = -20
@@ -486,6 +491,7 @@ class QuickNotesApp:
         self._context_menu.add_command(label="Toggle log mode", command=self._toggle_log_mode)
         self._context_menu.add_command(label="Open notes file in explorer", command=self._open_notes_file)
         self._context_menu.add_command(label="Settings", command=self._open_settings)
+        self._context_menu.add_command(label="About", command=self._show_about)
         self._context_menu.add_separator()
         self._context_menu.add_command(label="Quit", command=self.quit_app)
 
@@ -566,14 +572,24 @@ class QuickNotesApp:
             anchor="center",
         )
         _tab_label.pack(side="left", padx=(0, 4), pady=(4, 0))
-        _tab_label.bind("<Button-1>", lambda _event, _name=_topic_name: self._show_topic(_name))
-        _tab_label.bind("<Button-3>", lambda _event, _name=_topic_name: self._show_tab_context_menu(_event, _name))
+        self._bind_tab_label_events(_tab_label, _topic_name)
         self._tab_widgets[_topic_name] = {
             "frame": _frame,
             "text": _text_widget,
         }
         self._tab_labels[_topic_name] = _tab_label
         self._apply_tab_style(_topic_name)
+
+    def _bind_tab_label_events(self, _tab_label, _topic_name):
+        _tab_label.bind("<Button-1>", lambda _event, _name=_topic_name: self._show_topic(_name))
+        _tab_label.bind("<Double-Button-1>", lambda _event, _name=_topic_name: self._rename_topic_from_tab(_name))
+        _tab_label.bind("<Button-3>", lambda _event, _name=_topic_name: self._show_tab_context_menu(_event, _name))
+
+    def _rename_topic_from_tab(self, _topic_name):
+        self._context_topic_name = _topic_name
+        self._show_topic(_topic_name, _persist=False)
+        self._rename_topic()
+        return "break"
 
     def _topic_color(self, _topic_name):
         return self._topic_colors.get(_topic_name, DEFAULT_TOPIC_COLOR)
@@ -684,6 +700,7 @@ class QuickNotesApp:
         self._context_menu.entryconfig(3, state="normal" if _topic_count > 0 else "disabled")
         self._context_menu.entryconfig(7, label=_toggle_label)
         self._context_menu.tk_popup(_event.x_root, _event.y_root)
+        return "break"
 
     def _show_tab_context_menu(self, _event, _topic_name):
         self._context_topic_name = _topic_name
@@ -693,6 +710,7 @@ class QuickNotesApp:
         _toggle_label = "Disable log mode" if self._config["log_mode"] else "Enable log mode"
         self._context_menu.entryconfig(7, label=_toggle_label)
         self._context_menu.tk_popup(_event.x_root, _event.y_root)
+        return "break"
 
     def _clear_all(self):
         if _messagebox.askyesno(APP_NAME, "Clear all notes?"):
@@ -725,7 +743,7 @@ class QuickNotesApp:
         self._focus_active_text()
 
     def _rename_topic(self):
-        _old_name = self._active_topic
+        _old_name = self._context_topic_name or self._active_topic
         _new_name = _simpledialog.askstring(APP_NAME, "Rename topic:", initialvalue=_old_name, parent=self._root)
         if not _new_name:
             return
@@ -754,8 +772,7 @@ class QuickNotesApp:
         self._config["topics"][_topic_index] = _new_name
         self._active_topic = _new_name
         _tab_label.configure(text=_new_name)
-        _tab_label.bind("<Button-1>", lambda _event, _name=_new_name: self._show_topic(_name))
-        _tab_label.bind("<Button-3>", lambda _event, _name=_new_name: self._show_tab_context_menu(_event, _name))
+        self._bind_tab_label_events(_tab_label, _new_name)
         if self._context_topic_name == _old_name:
             self._context_topic_name = _new_name
         self._refresh_tab_styles()
@@ -765,7 +782,7 @@ class QuickNotesApp:
         if len(self._config["topics"]) == 1:
             _messagebox.showwarning(APP_NAME, "At least one topic tab must remain.")
             return
-        _topic_name = self._active_topic
+        _topic_name = self._context_topic_name or self._active_topic
         if not _messagebox.askyesno(APP_NAME, f"Delete topic '{_topic_name}'?"):
             return
 
@@ -810,6 +827,18 @@ class QuickNotesApp:
     def _open_settings(self):
         self._write_config()
         _os.startfile(str(self._config_path))
+
+    def _show_about(self):
+        _messagebox.showinfo(
+            APP_NAME,
+            (
+                f"{APP_NAME}\n"
+                f"Version {APP_VERSION}\n"
+                "Author: Didier SEVERAC\n\n"
+                "A floating notes app with topic tabs, autosave, tray access, and a global hotkey."
+            ),
+            parent=self._root,
+        )
 
     def _start_drag(self, _event):
         self._drag_origin = (_event.x_root, _event.y_root)
@@ -863,6 +892,7 @@ class QuickNotesApp:
             _pystray.MenuItem("Toggle", self._tray_toggle, default=True),
             _pystray.MenuItem("Show", self._tray_show),
             _pystray.MenuItem("Hide", self._tray_hide),
+            _pystray.MenuItem("About", self._tray_about),
             _pystray.MenuItem("Quit", self._tray_quit),
         )
         self._tray_icon = _pystray.Icon("quick_notes", _image, APP_NAME, _menu)
@@ -876,6 +906,9 @@ class QuickNotesApp:
 
     def _tray_hide(self, _icon=None, _item=None):
         self._queue_ui_action(self.hide_window)
+
+    def _tray_about(self, _icon=None, _item=None):
+        self._queue_ui_action(self._show_about)
 
     def _tray_quit(self, _icon=None, _item=None):
         self._queue_ui_action(self.quit_app)
