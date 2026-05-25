@@ -2,8 +2,11 @@
 pcm_to_jira_integrated_report_*
 *last_run.txt
 *.lnk
-deploy EXE.bat
-deploy PY sources.bat
+deploy.bat
+pushToGitHub.bat
+deploy_config.ini
+/deploy_config.ini
+
 
 # Python
 __pycache__/
@@ -12,6 +15,7 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
+*.url
 
 # Virtual Environments
 venv/
