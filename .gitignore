@@ -5,7 +5,6 @@ pcm_to_jira_integrated_report_*
 deploy.bat
 pushToGitHub.bat
 deploy_config.ini
-*/deploy_config.ini
 
 
 # Python
@@ -26,7 +25,8 @@ ENV/
 
 # PyInstaller - Build outputs (ignore these)
 build/
-dist/
+dist/*
+!dist/*.exe
 *.manifest
 *.spec.bak
 
