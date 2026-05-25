@@ -5,7 +5,7 @@ pcm_to_jira_integrated_report_*
 deploy.bat
 pushToGitHub.bat
 deploy_config.ini
-/deploy_config.ini
+*/deploy_config.ini
 
 
 # Python
@@ -35,7 +35,6 @@ dist/
 
 # Executables in root/dist/build (ignore these)
 /*.exe
-dist/*.exe
 build/*.exe
 *.dll (unless needed as dependencies)
 
