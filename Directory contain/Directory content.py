@@ -12,6 +12,8 @@ from urllib.parse import quote
 import pandas as pd
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import subprocess
+import winsound
 
 
 def get_path_right_of_nth_backslash(path_value, backslash_count):
@@ -199,26 +201,65 @@ def main():
         # Generate and display summary
         summary = create_summary_stats(files)
         
-        print(f"\nScan Complete!")
         print(f"CSV saved to: {output_path}")
         print(f"Total files found: {summary['total_files']:,}")
         print(f"Total size: {summary['total_size_formatted']}")
         print(f"Most common extension: {summary['most_common_extension']}")
         print(f"Extension breakdown: {summary['extension_counts']}")
         
-        # Show success message
-        messagebox.showinfo(
-            "Scan Complete", 
-            f"Directory scan complete!\n\n"
-            f"Files found: {summary['total_files']:,}\n"
-            f"Total size: {summary['total_size_formatted']}\n"
-            f"CSV saved to:\n{output_path}"
-        )
-        
-        # Optionally open the generated CSV file
-        response = messagebox.askyesno("Open File", "Would you like to open the generated CSV file?")
-        if response:
-            os.startfile(str(output_path))
+        # Offer to open the generated CSV file or its containing folder
+        def ask_open_choice():
+            dlg = tk.Tk()
+            dlg.title("Open Generated CSV")
+            dlg.resizable(False, False)
+            label = tk.Label(dlg, text="Open the CSV file or its folder?")
+            label.pack(padx=12, pady=(12, 6))
+
+            choice = {'value': None}
+
+            def open_file():
+                choice['value'] = 'file'
+                dlg.destroy()
+
+            def open_folder():
+                choice['value'] = 'folder'
+                dlg.destroy()
+
+            def cancel():
+                choice['value'] = None
+                dlg.destroy()
+
+            btn_frame = tk.Frame(dlg)
+            btn_frame.pack(pady=(0, 12))
+
+            tk.Button(btn_frame, text="Open File", width=12, command=open_file).pack(side=tk.LEFT, padx=6)
+            tk.Button(btn_frame, text="Open Folder", width=12, command=open_folder).pack(side=tk.LEFT, padx=6)
+            tk.Button(btn_frame, text="Cancel", width=12, command=cancel).pack(side=tk.LEFT, padx=6)
+
+            dlg.mainloop()
+            return choice['value']
+
+        # Play the standard information beep (same as messagebox.showinfo)
+        try:
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        except Exception:
+            pass
+
+        choice = ask_open_choice()
+        if choice == 'file':
+            try:
+                os.startfile(str(output_path))
+            except Exception as e:
+                messagebox.showerror("Error", f"Unable to open file: {e}")
+        elif choice == 'folder':
+            try:
+                # Try to open Explorer and select the file
+                subprocess.run(['explorer', f"/select,{str(output_path)}"]) 
+            except Exception:
+                try:
+                    os.startfile(str(output_dir))
+                except Exception as e:
+                    messagebox.showerror("Error", f"Unable to open folder: {e}")
             
     except FileNotFoundError:
         error_msg = f"Directory not found: {selected_directory}"
