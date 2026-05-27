@@ -5,7 +5,8 @@ pcm_to_jira_integrated_report_*
 deploy.bat
 pushToGitHub.bat
 deploy_config.ini
-
+syncFromGHE.bat
+syncFromPerso.bat
 
 # Python
 __pycache__/
